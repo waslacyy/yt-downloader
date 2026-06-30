@@ -53,6 +53,11 @@ def main():
             "noplaylist": True,
             "quiet": True,
             "no_warnings": True,
+            "verbose": True,
+            # Tenta múltiplos clients em cascata — Shorts e alguns vídeos
+            # restritos às vezes só expõem formatos completos em clients
+            # específicos. "tv" costuma não exigir PO token.
+            "extractor_args": {"youtube": {"player_client": ["tv", "android", "web"]}},
         }
 
         if YOUTUBE_COOKIES:
