@@ -33,4 +33,5 @@ jobs:
           VIDEO_URL: ${{ github.event.client_payload.url }}
           CALLBACK_URL: ${{ github.event.client_payload.callback_url }}
           JOB_ID: ${{ github.event.client_payload.job_id }}
+          METADATA_JSON: ${{ toJson(github.event.client_payload.metadata) }}
         run: python download.py

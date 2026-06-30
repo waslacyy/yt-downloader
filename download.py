@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -11,6 +12,11 @@ VIDEO_URL = os.environ.get("VIDEO_URL")
 CALLBACK_URL = os.environ.get("CALLBACK_URL")
 JOB_ID = os.environ.get("JOB_ID", "sem-job-id")
 
+try:
+    METADATA = json.loads(os.environ.get("METADATA_JSON") or "null") or {}
+except Exception:
+    METADATA = {}
+
 cloudinary.config(
     cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
     api_key=os.environ.get("CLOUDINARY_API_KEY"),
@@ -21,6 +27,7 @@ cloudinary.config(
 
 def notify(payload):
     """Avisa o n8n/Zapier que o job terminou (sucesso ou erro)."""
+    payload["metadata"] = METADATA
     if not CALLBACK_URL:
         print("Sem CALLBACK_URL definido, não foi possível notificar.")
         return
