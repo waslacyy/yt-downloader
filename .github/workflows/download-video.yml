@@ -1,0 +1,36 @@
+name: Download Video
+
+# Disparado externamente via API (repository_dispatch), não por push/PR.
+# O n8n/Zapier chama a API do GitHub pra acionar isso.
+on:
+  repository_dispatch:
+    types: [download-video]
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar ffmpeg e dependências
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          pip install --no-cache-dir yt-dlp cloudinary requests
+
+      - name: Baixar vídeo e subir pro Cloudinary
+        env:
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          VIDEO_URL: ${{ github.event.client_payload.url }}
+          CALLBACK_URL: ${{ github.event.client_payload.callback_url }}
+          JOB_ID: ${{ github.event.client_payload.job_id }}
+        run: python download.py
