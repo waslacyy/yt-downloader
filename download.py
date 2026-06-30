@@ -11,6 +11,7 @@ import yt_dlp
 VIDEO_URL = os.environ.get("VIDEO_URL")
 CALLBACK_URL = os.environ.get("CALLBACK_URL")
 JOB_ID = os.environ.get("JOB_ID", "sem-job-id")
+YOUTUBE_COOKIES = os.environ.get("YOUTUBE_COOKIES")  # opcional
 
 try:
     METADATA = json.loads(os.environ.get("METADATA_JSON") or "null") or {}
@@ -52,7 +53,17 @@ def main():
             "noplaylist": True,
             "quiet": True,
             "no_warnings": True,
+            # Simula o client "android" em vez do client web padrão —
+            # costuma escapar do bloqueio "Sign in to confirm you're not a bot"
+            # que o YouTube aplica em IPs de datacenter (GitHub Actions, Render, etc).
+            "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
         }
+
+        if YOUTUBE_COOKIES:
+            cookies_path = os.path.join(tmp_dir, "cookies.txt")
+            with open(cookies_path, "w") as f:
+                f.write(YOUTUBE_COOKIES)
+            ydl_opts["cookiefile"] = cookies_path
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:

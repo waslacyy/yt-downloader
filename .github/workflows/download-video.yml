@@ -30,6 +30,7 @@ jobs:
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
           VIDEO_URL: ${{ github.event.client_payload.url }}
           CALLBACK_URL: ${{ github.event.client_payload.callback_url }}
           JOB_ID: ${{ github.event.client_payload.job_id }}

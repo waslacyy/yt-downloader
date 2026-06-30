@@ -124,3 +124,43 @@ python download.py
   upload), então pra automação semanal isso é mais do que suficiente
 - `timeout-minutes: 15` no workflow evita que um job travado consuma minutos
   à toa — ajuste se precisar de mais tempo pra vídeos longos
+
+## Erro "Sign in to confirm you're not a bot"
+
+O YouTube bloqueia requisições vindas de IPs de datacenter (GitHub Actions,
+Render, Fly, etc.) com mais frequência do que IPs residenciais/de
+navegador. O `download.py` já tenta contornar isso simulando o client
+`android` do YouTube em vez do client `web` padrão — isso resolve a maioria
+dos casos sem precisar de mais nada.
+
+Se mesmo assim continuar dando esse erro em algum vídeo específico, a saída
+mais robusta é passar cookies de uma sessão logada do YouTube:
+
+### Como exportar os cookies
+
+1. Instala a extensão **"Get cookies.txt LOCALLY"** no Chrome/Firefox
+   (evite extensões antigas chamadas só "cookies.txt", muitas estão
+   desatualizadas ou removidas das lojas)
+2. Loga no [youtube.com](https://youtube.com) no navegador com essa extensão
+3. Com a aba do YouTube aberta, clica na extensão e exporta os cookies
+   (formato Netscape, é o padrão)
+4. Abre o arquivo `.txt` gerado e copia o conteúdo inteiro
+
+### Onde colocar
+
+No repositório: `Settings` → `Secrets and variables` → `Actions` →
+**New repository secret**:
+- Nome: `YOUTUBE_COOKIES`
+- Valor: cola o conteúdo do arquivo de cookies exportado
+
+O workflow já está configurado pra ler esse secret automaticamente (se ele
+não existir, o script simplesmente ignora e segue sem cookies).
+
+⚠️ **Cuidados:**
+- Use uma conta secundária do YouTube pra isso, não sua conta principal —
+  uso automatizado tem risco (pequeno, mas existe) de a conta ser
+  flagada
+- Cookies expiram de tempos em tempos (semanas a meses, varia) — se o erro
+  voltar, é só repetir a exportação e atualizar o secret
+- Nunca cole esse conteúdo em outro lugar além do campo de secret do GitHub
+  (ele literalmente dá acesso à sua conta do YouTube enquanto válido)
