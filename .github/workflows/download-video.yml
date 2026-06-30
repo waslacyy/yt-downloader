@@ -20,10 +20,15 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Setup Node.js (necessário pro provider de PO Token do yt-dlp)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Instalar ffmpeg e dependências
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
-          pip install --no-cache-dir yt-dlp cloudinary requests
+          pip install --no-cache-dir yt-dlp cloudinary requests bgutil-ytdlp-pot-provider
 
       - name: Baixar vídeo e subir pro Cloudinary
         env:
