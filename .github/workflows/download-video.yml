@@ -30,6 +30,24 @@ jobs:
           sudo apt-get update && sudo apt-get install -y ffmpeg
           pip install --no-cache-dir yt-dlp cloudinary requests bgutil-ytdlp-pot-provider
 
+      - name: Clonar e iniciar o servidor de PO Token (bgutil)
+        run: |
+          git clone --depth 1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /home/runner/bgutil-ytdlp-pot-provider
+          cd /home/runner/bgutil-ytdlp-pot-provider/server
+          npm install
+          npm run build
+          nohup node build/main.js > /tmp/pot-server.log 2>&1 &
+          echo "Aguardando o servidor de PO Token iniciar..."
+          for i in $(seq 1 15); do
+            if curl -s http://127.0.0.1:4416/ping > /dev/null 2>&1; then
+              echo "Servidor de PO Token no ar."
+              break
+            fi
+            sleep 1
+          done
+          echo "── Log do servidor ──"
+          cat /tmp/pot-server.log || true
+
       - name: Baixar vídeo e subir pro Cloudinary
         env:
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
