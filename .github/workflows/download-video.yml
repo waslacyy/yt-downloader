@@ -28,7 +28,8 @@ jobs:
       - name: Instalar ffmpeg e dependências
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
-          pip install --no-cache-dir yt-dlp cloudinary requests bgutil-ytdlp-pot-provider
+          pip install --no-cache-dir "yt-dlp[default] @ git+https://github.com/yt-dlp/yt-dlp.git@master" cloudinary requests bgutil-ytdlp-pot-provider
+          yt-dlp --version
 
       - name: Clonar e iniciar o servidor de PO Token (bgutil)
         run: |
