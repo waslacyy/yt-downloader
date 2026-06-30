@@ -35,18 +35,17 @@ jobs:
           git clone --depth 1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /home/runner/bgutil-ytdlp-pot-provider
           cd /home/runner/bgutil-ytdlp-pot-provider/server
           npm install
-          npm run build
-          nohup node build/main.js > /tmp/pot-server.log 2>&1 &
-          echo "Aguardando o servidor de PO Token iniciar..."
-          for i in $(seq 1 15); do
-            if curl -s http://127.0.0.1:4416/ping > /dev/null 2>&1; then
-              echo "Servidor de PO Token no ar."
-              break
-            fi
-            sleep 1
-          done
+          echo "── package.json (pra ver os nomes reais dos scripts) ──"
+          cat package.json
+          echo "── Tentando compilar (cascata de nomes comuns) ──"
+          npm run build || npm run compile || npx tsc -p . || echo "Nenhum comando de build padrão funcionou — seguindo assim mesmo pra diagnóstico."
+          echo "── Arquivos .js encontrados depois do build ──"
+          find . -maxdepth 3 -name "*.js" | grep -v node_modules | head -30
+          echo "── Tentando iniciar o servidor ──"
+          (node build/main.js > /tmp/pot-server.log 2>&1 &) 
+          sleep 3
           echo "── Log do servidor ──"
-          cat /tmp/pot-server.log || true
+          cat /tmp/pot-server.log || echo "sem log ainda"
 
       - name: Baixar vídeo e subir pro Cloudinary
         env:
