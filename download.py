@@ -66,6 +66,25 @@ def main():
                 f.write(YOUTUBE_COOKIES)
             ydl_opts["cookiefile"] = cookies_path
 
+        # ─── DIAGNÓSTICO: lista os formatos reais antes de tentar baixar ────
+        try:
+            probe_opts = {**ydl_opts, "format": None, "simulate": True}
+            with yt_dlp.YoutubeDL(probe_opts) as ydl_probe:
+                probe_info = ydl_probe.extract_info(VIDEO_URL, download=False)
+            print("── FORMATOS DISPONÍVEIS (diagnóstico) ──")
+            for f in probe_info.get("formats", []):
+                print(
+                    f"id={f.get('format_id')!s:>8} "
+                    f"height={str(f.get('height')):>5} "
+                    f"vcodec={f.get('vcodec')!s:>12} "
+                    f"acodec={f.get('acodec')!s:>12} "
+                    f"protocol={f.get('protocol')!s:>10} "
+                    f"tem_url={bool(f.get('url'))}"
+                )
+            print("── FIM DO DIAGNÓSTICO ──")
+        except Exception as probe_err:
+            print(f"Falha ao listar formatos pra diagnóstico: {probe_err}")
+
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(VIDEO_URL, download=True)
