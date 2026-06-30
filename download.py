@@ -53,10 +53,6 @@ def main():
             "noplaylist": True,
             "quiet": True,
             "no_warnings": True,
-            # Simula o client "android" em vez do client web padrão —
-            # costuma escapar do bloqueio "Sign in to confirm you're not a bot"
-            # que o YouTube aplica em IPs de datacenter (GitHub Actions, Render, etc).
-            "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
         }
 
         if YOUTUBE_COOKIES:
