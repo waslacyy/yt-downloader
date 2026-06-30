@@ -54,7 +54,7 @@ def main():
             "quiet": True,
             "no_warnings": True,
             "verbose": True,
-            "extractor_args": {"youtube": {"player_client": ["android"]}},
+            "extractor_args": {"youtube": {"player_client": ["tv", "android"]}},
         }
 
         if YOUTUBE_COOKIES:
