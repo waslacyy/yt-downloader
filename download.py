@@ -38,6 +38,41 @@ def notify(payload):
         print(f"Falha ao notificar callback: {e}")
 
 
+CLIENT_CANDIDATES = ["android", "tv"]
+
+
+def attempt_download(video_url, output_template, cookies_path):
+    """Tenta cada client isoladamente (chamadas 100% separadas, nunca
+    misturados na mesma lista) até um funcionar. Retorna o `info` do
+    primeiro que conseguir baixar."""
+    last_error = None
+    for client in CLIENT_CANDIDATES:
+        opts = {
+            "format": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+            "merge_output_format": "mp4",
+            "outtmpl": output_template,
+            "noplaylist": True,
+            "quiet": True,
+            "no_warnings": True,
+            "verbose": True,
+            "extractor_args": {"youtube": {"player_client": [client]}},
+        }
+        if cookies_path:
+            opts["cookiefile"] = cookies_path
+
+        print(f"── Tentando client isolado: {client} ──")
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(video_url, download=True)
+            print(f"── Sucesso com client: {client} ──")
+            return info
+        except Exception as e:
+            print(f"── Falhou com client '{client}': {e} ──")
+            last_error = e
+
+    raise last_error
+
+
 def main():
     if not VIDEO_URL:
         notify({"job_id": JOB_ID, "status": "error", "error": "VIDEO_URL vazio"})
@@ -46,47 +81,16 @@ def main():
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_template = os.path.join(tmp_dir, f"{JOB_ID}.%(ext)s")
 
-        ydl_opts = {
-            "format": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
-            "merge_output_format": "mp4",
-            "outtmpl": output_template,
-            "noplaylist": True,
-            "quiet": True,
-            "no_warnings": True,
-            "verbose": True,
-            "extractor_args": {"youtube": {"player_client": ["android", "tv"]}},
-        }
-
+        cookies_path = None
         if YOUTUBE_COOKIES:
             cookies_path = os.path.join(tmp_dir, "cookies.txt")
             with open(cookies_path, "w") as f:
                 f.write(YOUTUBE_COOKIES)
-            ydl_opts["cookiefile"] = cookies_path
-
-        # ─── DIAGNÓSTICO: lista os formatos reais antes de tentar baixar ────
-        try:
-            probe_opts = {**ydl_opts, "format": None, "simulate": True}
-            with yt_dlp.YoutubeDL(probe_opts) as ydl_probe:
-                probe_info = ydl_probe.extract_info(VIDEO_URL, download=False)
-            print("── FORMATOS DISPONÍVEIS (diagnóstico) ──")
-            for f in probe_info.get("formats", []):
-                print(
-                    f"id={f.get('format_id')!s:>8} "
-                    f"height={str(f.get('height')):>5} "
-                    f"vcodec={f.get('vcodec')!s:>12} "
-                    f"acodec={f.get('acodec')!s:>12} "
-                    f"protocol={f.get('protocol')!s:>10} "
-                    f"tem_url={bool(f.get('url'))}"
-                )
-            print("── FIM DO DIAGNÓSTICO ──")
-        except Exception as probe_err:
-            print(f"Falha ao listar formatos pra diagnóstico: {probe_err}")
 
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(VIDEO_URL, download=True)
+            info = attempt_download(VIDEO_URL, output_template, cookies_path)
         except Exception as e:
-            notify({"job_id": JOB_ID, "status": "error", "error": f"erro no yt-dlp: {e}"})
+            notify({"job_id": JOB_ID, "status": "error", "error": f"erro no yt-dlp (todos os clients falharam): {e}"})
             sys.exit(1)
 
         downloaded_file = None
