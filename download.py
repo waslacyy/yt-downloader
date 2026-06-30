@@ -47,7 +47,7 @@ def main():
         output_template = os.path.join(tmp_dir, f"{JOB_ID}.%(ext)s")
 
         ydl_opts = {
-            "format": "bestvideo[height<=720]+bestaudio/best[height<=720]",
+            "format": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
             "merge_output_format": "mp4",
             "outtmpl": output_template,
             "noplaylist": True,
