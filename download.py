@@ -73,14 +73,43 @@ def parse_netscape_cookies(cookie_text):
     return cookies
 
 
-# JS injetado na página: acopla um MediaRecorder direto na saída do <video>
-# e manda cada pedaço gravado de volta pro Python via callback exposto.
-# Isso grava o que está sendo REPRODUZIDO na tela, então funciona
-# independente de qual protocolo o YouTube usa para entregar os bytes
-# por baixo (SABR, DASH, HLS, o que for) — se o navegador consegue tocar,
-# a gente consegue gravar.
-RECORDER_JS = """
-async () => {
+# Seletor usado em todo lugar pra achar o player principal, evitando
+# pegar prévias de outros Shorts que também têm <video> na página.
+VIDEO_SELECTOR_JS = "document.querySelector('#movie_player video') || document.querySelector('video')"
+
+# Cada uma dessas funções JS é síncrona no topo (sem `await` bloqueante) —
+# de propósito. `page.evaluate()` do Playwright não tem timeout próprio;
+# se a Promise nunca resolve, ele trava pra sempre. Quebrando em pedaços
+# pequenos e síncronos, toda espera de verdade fica do lado Python, via
+# `page.wait_for_function(...)`, que TEM timeout de verdade.
+
+FIRE_PLAY_JS = f"""
+() => {{
+  const v = {VIDEO_SELECTOR_JS};
+  v.muted = false;
+  v.volume = 1.0;
+  v.play().catch(() => {{}}); // dispara o play sem esperar a Promise resolver
+}}
+"""
+
+IS_READY_JS = f"""
+() => {{
+  const v = {VIDEO_SELECTOR_JS};
+  return !!(v && v.readyState >= 2 && v.videoWidth > 0);
+}}
+"""
+
+CAPTURE_STREAM_JS = f"""
+() => {{
+  const v = {VIDEO_SELECTOR_JS};
+  window.__stream = v.captureStream ? v.captureStream() : v.mozCaptureStream();
+}}
+"""
+
+STREAM_HAS_TRACKS_JS = "() => !!(window.__stream && window.__stream.getTracks().length > 0)"
+
+START_RECORDER_JS = """
+() => {
   function arrayBufferToBase64(buffer) {
     let binary = '';
     const bytes = new Uint8Array(buffer);
@@ -91,29 +120,7 @@ async () => {
     return btoa(binary);
   }
 
-  const video = document.querySelector('#movie_player video') || document.querySelector('video');
-  video.muted = false;
-  video.volume = 1.0;
-
-  await video.play();
-
-  // Espera o vídeo ter pelo menos um frame decodificado antes de
-  // capturar o stream — captureStream() chamado cedo demais retorna
-  // um stream vazio (sem faixas), e o MediaRecorder não aceita isso.
-  for (let i = 0; i < 100; i++) {
-    if (video.readyState >= 2 && video.videoWidth > 0) break;
-    await new Promise((r) => setTimeout(r, 100));
-  }
-
-  let stream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
-
-  // Se ainda não tiver faixas, espera mais um pouco e tenta de novo
-  for (let i = 0; i < 20 && stream.getTracks().length === 0; i++) {
-    await new Promise((r) => setTimeout(r, 200));
-    stream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
-  }
-
-  const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9,opus' });
+  const recorder = new MediaRecorder(window.__stream, { mimeType: 'video/webm;codecs=vp9,opus' });
 
   recorder.ondataavailable = async (e) => {
     if (e.data && e.data.size > 0) {
@@ -149,8 +156,7 @@ def get_video_duration_seconds(page, max_wait_seconds=15):
     """Espera os metadados do vídeo carregarem pra saber a duração real."""
     for _ in range(max_wait_seconds * 2):
         duration = page.evaluate(
-            "() => { const v = document.querySelector('#movie_player video') || "
-            "document.querySelector('video'); "
+            f"() => {{ const v = {VIDEO_SELECTOR_JS}; "
             "return v && isFinite(v.duration) ? v.duration : null; }"
         )
         if duration and duration > 0:
@@ -220,7 +226,16 @@ def record_video(video_url, cookies, output_webm_path):
         skip_ads_if_present(page)
         print("── Checagem de anúncio concluída ──")
 
-        duration = get_video_duration_seconds(page)
+        page.evaluate(FIRE_PLAY_JS)
+        print("── play() disparado (sem esperar a Promise) ──")
+
+        try:
+            page.wait_for_function(IS_READY_JS, timeout=15000)
+            print("── Vídeo com frames decodificados, pronto pra capturar ──")
+        except Exception:
+            print("── Aviso: vídeo não confirmou frames decodificados em 15s, seguindo mesmo assim ──")
+
+        duration = get_video_duration_seconds(page, max_wait_seconds=5)
         if duration is None:
             duration = 60  # fallback conservador se não conseguir ler a duração
         print(f"── Duração detectada: {duration:.1f}s ──")
@@ -231,14 +246,20 @@ def record_video(video_url, cookies, output_webm_path):
         MAX_WAIT_SECONDS = 180
         wait_seconds = min(duration + 20, MAX_WAIT_SECONDS)
 
-        page.evaluate(RECORDER_JS)
+        page.evaluate(CAPTURE_STREAM_JS)
+        try:
+            page.wait_for_function(STREAM_HAS_TRACKS_JS, timeout=10000)
+            print("── Stream com faixas de áudio/vídeo confirmadas ──")
+        except Exception:
+            print("── Aviso: stream sem faixas confirmadas em 10s, tentando gravar mesmo assim ──")
+
+        page.evaluate(START_RECORDER_JS)
         print("── Gravação iniciada ──")
 
         # Espera o vídeo acabar (ou timeout de segurança)
         try:
             page.wait_for_function(
-                "() => { const v = document.querySelector('#movie_player video') || "
-                "document.querySelector('video'); return v && v.ended; }",
+                f"() => {{ const v = {VIDEO_SELECTOR_JS}; return v && v.ended; }}",
                 timeout=int(wait_seconds * 1000),
             )
             print("── Vídeo terminou naturalmente ──")
