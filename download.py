@@ -29,8 +29,11 @@ cloudinary.config(
 
 
 def notify(payload):
-    """Avisa o n8n/Zapier que o job terminou (sucesso ou erro)."""
+    """Avisa o n8n/Zapier que o job terminou (sucesso ou erro). Também
+    imprime no log do Actions, já que o payload de erro às vezes só ia
+    pro webhook e ficava invisível no log."""
     payload["metadata"] = METADATA
+    print(f"── Payload do callback ── {json.dumps(payload, ensure_ascii=False)}")
     if not CALLBACK_URL:
         print("Sem CALLBACK_URL definido, não foi possível notificar.")
         return
