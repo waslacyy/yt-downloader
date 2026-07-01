@@ -175,7 +175,7 @@ def record_video(video_url, cookies, output_webm_path):
         page.expose_function("sendChunkToPython", handle_chunk)
 
         page.goto(video_url, wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_selector("video", timeout=20000)
+        page.wait_for_selector("video", state="attached", timeout=20000)
 
         # Fecha banner de consentimento/cookies se aparecer (best-effort)
         for text in ["Accept all", "Aceitar tudo", "I agree", "Concordo"]:
