@@ -95,7 +95,24 @@ async () => {
   video.muted = false;
   video.volume = 1.0;
 
-  const stream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
+  await video.play();
+
+  // Espera o vídeo ter pelo menos um frame decodificado antes de
+  // capturar o stream — captureStream() chamado cedo demais retorna
+  // um stream vazio (sem faixas), e o MediaRecorder não aceita isso.
+  for (let i = 0; i < 100; i++) {
+    if (video.readyState >= 2 && video.videoWidth > 0) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+
+  let stream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
+
+  // Se ainda não tiver faixas, espera mais um pouco e tenta de novo
+  for (let i = 0; i < 20 && stream.getTracks().length === 0; i++) {
+    await new Promise((r) => setTimeout(r, 200));
+    stream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
+  }
+
   const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9,opus' });
 
   recorder.ondataavailable = async (e) => {
@@ -107,7 +124,6 @@ async () => {
 
   window.__recorder = recorder;
   recorder.start(1000); // timeslice de 1s — chega em pedaços, não tudo no final
-  await video.play();
 }
 """
 
