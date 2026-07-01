@@ -226,6 +226,16 @@ def record_video(video_url, cookies, output_webm_path):
         skip_ads_if_present(page)
         print("── Checagem de anúncio concluída ──")
 
+        # Clique de verdade (via Playwright, gera evento de input confiável)
+        # no player antes do play() — o YouTube às vezes só libera
+        # decodificação de fato com uma interação "trusted", mesmo com
+        # autoplay-policy habilitada e play() disparado via JS.
+        try:
+            page.click("#movie_player", timeout=5000)
+            print("── Clique real no player disparado ──")
+        except Exception as e:
+            print(f"── Aviso: não consegui clicar no player: {e} ──")
+
         page.evaluate(FIRE_PLAY_JS)
         print("── play() disparado (sem esperar a Promise) ──")
 
