@@ -20,35 +20,15 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Setup Node.js (necessário pro provider de PO Token do yt-dlp)
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Instalar ffmpeg e dependências
+      - name: Instalar ffmpeg e dependências Python
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
-          pip install --no-cache-dir "yt-dlp[default] @ git+https://github.com/yt-dlp/yt-dlp.git@master" cloudinary requests bgutil-ytdlp-pot-provider
-          yt-dlp --version
+          pip install --no-cache-dir playwright cloudinary requests
 
-      - name: Clonar e iniciar o servidor de PO Token (bgutil)
-        run: |
-          git clone --depth 1 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /home/runner/bgutil-ytdlp-pot-provider
-          cd /home/runner/bgutil-ytdlp-pot-provider/server
-          npm install
-          echo "── package.json (pra ver os nomes reais dos scripts) ──"
-          cat package.json
-          echo "── Tentando compilar (cascata de nomes comuns) ──"
-          npm run build || npm run compile || npx tsc -p . || echo "Nenhum comando de build padrão funcionou — seguindo assim mesmo pra diagnóstico."
-          echo "── Arquivos .js encontrados depois do build ──"
-          find . -maxdepth 3 -name "*.js" | grep -v node_modules | head -30
-          echo "── Tentando iniciar o servidor ──"
-          (node build/main.js > /tmp/pot-server.log 2>&1 &) 
-          sleep 3
-          echo "── Log do servidor ──"
-          cat /tmp/pot-server.log || echo "sem log ainda"
+      - name: Instalar Chromium do Playwright (com dependências de sistema)
+        run: playwright install --with-deps chromium
 
-      - name: Baixar vídeo e subir pro Cloudinary
+      - name: Baixar vídeo (Playwright) e subir pro Cloudinary
         env:
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}

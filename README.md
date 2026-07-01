@@ -1,166 +1,112 @@
-# YouTube Downloader via GitHub Actions (sem servidor, sem cartão)
+# YouTube Downloader via GitHub Actions + Playwright (sem servidor, sem cartão)
 
-Em vez de manter um servidor rodando 24/7, esse projeto usa o GitHub Actions
-como "executor sob demanda": você dispara o workflow via API, ele baixa o
-vídeo com `yt-dlp`, sobe pro Cloudinary, e **avisa de volta via webhook**
-quando termina.
+Dispara via API, roda num Chromium headless que **reproduz o vídeo de
+verdade** e grava a saída (áudio+vídeo) direto da tela — não extrai URL
+nenhuma. Sobe o resultado pro Cloudinary e avisa via webhook quando termina.
 
-⚠️ **Diferença importante em relação ao Fly/Render:** isso é **assíncrono**.
-Não tem como chamar e já receber a resposta na mesma requisição — o
-GitHub Actions roda em background e leva ~30s a alguns minutos dependendo
-do vídeo. Por isso o fluxo no n8n/Zapier muda um pouco (explicado abaixo).
+## Por que gravar a reprodução em vez de extrair a URL do arquivo
+
+O YouTube vem forçando um protocolo de streaming (SABR) que não expõe mais
+uma URL simples de download em vários casos (Shorts, principalmente). Um
+extrator como yt-dlp que tenta *pegar a URL e baixar* cai nesse bloqueio.
+
+O Playwright não precisa de URL nenhuma: ele abre a página, deixa o
+`<video>` tocar, e usa `captureStream()` + `MediaRecorder` pra gravar
+exatamente o que está sendo reproduzido. Se o navegador consegue tocar o
+vídeo, a gente consegue gravar — não importa qual protocolo o YouTube usa
+por baixo.
+
+**Trade-off:** a gravação é proporcional à duração real do vídeo (um Short
+de 30s leva ~30s pra gravar; um vídeo de 5 min leva ~5 min). Bom pra
+conteúdo curto, mais lento pra vídeo longo.
 
 ## Como funciona
 
 1. Seu n8n/Zapier chama a API do GitHub (`POST /repos/.../dispatches`)
-   passando a URL do vídeo + uma `callback_url` (um webhook seu) + um `job_id`
+   passando a URL do vídeo + uma `callback_url` (webhook seu) + um `job_id`
 2. Isso dispara o workflow `.github/workflows/download-video.yml`
-3. O workflow baixa o vídeo, sobe pro Cloudinary, e faz um `POST` pra sua
-   `callback_url` com o resultado (`cloudinary_url`, `title`, `duration`, etc.)
+3. O workflow abre um Chromium headless, carrega a página do vídeo, pula
+   anúncio se aparecer, grava a reprodução real, converte pra mp4 (ffmpeg),
+   sobe pro Cloudinary, e faz um `POST` pra sua `callback_url` com o
+   resultado (`cloudinary_url`, `title`, `duration`, etc.)
 4. Seu n8n/Zapier recebe esse callback e continua o resto da automação
 
-## Passo 1 — Criar o repositório no GitHub
+⚠️ **Continua assíncrono**, igual antes — não tem resposta na hora, o
+resultado chega via callback. Ver seção "Usando no Zapier / n8n" mais
+abaixo (não mudou nada nessa parte).
 
-```bash
-cd yt-downloader-actions
-git init
-git add .
-git commit -m "yt-downloader via github actions"
-```
-Crie um repo novo no GitHub (pode ser privado — Actions funciona igual e
-ainda é grátis) e dê push:
-```bash
-git remote add origin https://github.com/SEU_USUARIO/yt-downloader-actions.git
-git branch -M main
-git push -u origin main
-```
+## Passo 1 — Repositório e secrets do Cloudinary
 
-## Passo 2 — Configurar os secrets do Cloudinary no repositório
+Igual antes — se você já tem o repo criado com os secrets
+`CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`,
+pode pular pro passo 2.
 
-No GitHub: **Settings > Secrets and variables > Actions > New repository secret**
+Senão: crie o repositório no GitHub, dê push nesses arquivos, e configure
+os secrets em `Settings > Secrets and variables > Actions`.
 
-Adicione:
-- `CLOUDINARY_CLOUD_NAME`
-- `CLOUDINARY_API_KEY`
-- `CLOUDINARY_API_SECRET`
+## Passo 2 — Cookies do YouTube (ainda necessário)
 
-## Passo 3 — Criar um Personal Access Token (PAT)
+O Playwright "loga" o navegador usando esses cookies, do mesmo jeito que
+antes:
 
-Pra disparar o workflow via API, você precisa de um token. Vá em:
-**GitHub > Settings (da sua conta) > Developer settings > Personal access
-tokens > Fine-grained tokens > Generate new token**
+1. Extensão **"Get cookies.txt LOCALLY"** no navegador
+2. Loga no YouTube com uma conta secundária (não a principal — automação
+   tem risco pequeno de flag na conta)
+3. Exporta os cookies (formato Netscape) e copia o conteúdo
+4. Cria/atualiza o secret `YOUTUBE_COOKIES` no repositório com esse conteúdo
 
-- **Repository access:** só o repositório `yt-downloader-actions`
-- **Permissions:** `Contents` → Read and write (necessário pro endpoint de
-  dispatch funcionar)
-- Defina uma validade (ex: 1 ano) e copie o token gerado — você só vê ele
-  uma vez.
+## Passo 3 — Personal Access Token (PAT)
 
-Guarde esse token com segurança (ex: como credencial no próprio n8n/Zapier).
+Mesmo processo de antes: fine-grained token, escopado pro repositório,
+permissão `Contents: Read and write` — usado só para disparar o workflow
+via API (não precisa de `Workflows` a menos que você vá dar push de novos
+arquivos de workflow).
 
 ## Passo 4 — Disparar o workflow
-
-Chamada que seu n8n/Zapier vai fazer:
 
 ```bash
 curl -X POST \
   -H "Authorization: Bearer SEU_TOKEN" \
   -H "Accept: application/vnd.github+json" \
-  https://api.github.com/repos/SEU_USUARIO/yt-downloader-actions/dispatches \
+  https://api.github.com/repos/SEU_USUARIO/SEU_REPO/dispatches \
   -d '{
     "event_type": "download-video",
     "client_payload": {
-      "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "url": "https://www.youtube.com/shorts/XXXXXXXXXXX",
       "callback_url": "https://SEU_WEBHOOK_AQUI",
-      "job_id": "abc-123"
+      "job_id": "abc-123",
+      "metadata": { "record_id": "opcional, qualquer coisa que queira recuperar depois" }
     }
   }'
 ```
 
-Essa chamada retorna `204 No Content` na hora (só confirma que disparou —
-não é o resultado do download).
+## Usando no Zapier / n8n
 
-## Passo 5 — Receber o resultado (a parte assíncrona)
+Não mudou nada aqui em relação à versão anterior (baseada em yt-dlp) — o
+formato do payload de disparo e do callback de resultado é o mesmo.
 
-### Se você usa n8n
-Use o node **Wait** configurado em modo "Webhook" — ele pausa a execução do
-workflow e gera uma URL única de retomada. Essa URL é a `callback_url` que
-você manda no passo 4. Quando o GitHub Actions chamar essa URL de volta, o
-workflow do n8n retoma exatamente de onde parou, com o resultado disponível
-nos dados do node. É o jeito mais limpo de fazer isso no n8n.
+### n8n
+Node **Wait** em modo webhook — gera uma URL de retomada, que é a
+`callback_url` que você manda no disparo.
 
-### Se você usa Zapier
-Zapier não tem um node de "esperar webhook" no meio do Zap, então o jeito é
-dividir em dois Zaps:
+### Zapier
+Dois Zaps — um que dispara (`zapier-snippets/zap-a-dispatch.js`), outro com
+trigger **Catch Hook** que recebe o resultado
+(`zapier-snippets/zap-b-receive.md`).
 
-1. **Zap A (dispara):** seu trigger atual → step que chama a API do GitHub
-   (passo 4) com uma `callback_url` apontando pro Catch Hook do Zap B,
-   incluindo um `job_id` que te ajude a correlacionar depois (ex: salvar
-   numa planilha/Airtable junto com o `job_id` antes de disparar)
-2. **Zap B (recebe):** trigger **Catch Hook** → recebe o payload com
-   `cloudinary_url`, `title`, `job_id` etc. → continua o resto da automação
-   que antes vinha depois do download (ex: postar no Slack, atualizar
-   planilha usando o `job_id` pra achar a linha certa)
+## Limites e ajustes
 
-## Testando localmente (opcional)
-
-Pra testar o `download.py` sem precisar do GitHub Actions:
-```bash
-pip install yt-dlp cloudinary requests
-export CLOUDINARY_CLOUD_NAME=...
-export CLOUDINARY_API_KEY=...
-export CLOUDINARY_API_SECRET=...
-export VIDEO_URL="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-export CALLBACK_URL="https://webhook.site/seu-id-de-teste"  # webhook.site é ótimo pra testar
-export JOB_ID="teste-local"
-python download.py
-```
-
-## Limites do plano grátis
-
-- **2.000 minutos/mês** de Actions grátis em repositório privado (ilimitado
-  em repositório público)
-- Cada execução desse workflow consome só alguns minutos (download +
-  upload), então pra automação semanal isso é mais do que suficiente
-- `timeout-minutes: 15` no workflow evita que um job travado consuma minutos
-  à toa — ajuste se precisar de mais tempo pra vídeos longos
-
-## Erro "Sign in to confirm you're not a bot"
-
-O YouTube bloqueia requisições vindas de IPs de datacenter (GitHub Actions,
-Render, Fly, etc.) com mais frequência do que IPs residenciais/de
-navegador. O `download.py` já tenta contornar isso simulando o client
-`android` do YouTube em vez do client `web` padrão — isso resolve a maioria
-dos casos sem precisar de mais nada.
-
-Se mesmo assim continuar dando esse erro em algum vídeo específico, a saída
-mais robusta é passar cookies de uma sessão logada do YouTube:
-
-### Como exportar os cookies
-
-1. Instala a extensão **"Get cookies.txt LOCALLY"** no Chrome/Firefox
-   (evite extensões antigas chamadas só "cookies.txt", muitas estão
-   desatualizadas ou removidas das lojas)
-2. Loga no [youtube.com](https://youtube.com) no navegador com essa extensão
-3. Com a aba do YouTube aberta, clica na extensão e exporta os cookies
-   (formato Netscape, é o padrão)
-4. Abre o arquivo `.txt` gerado e copia o conteúdo inteiro
-
-### Onde colocar
-
-No repositório: `Settings` → `Secrets and variables` → `Actions` →
-**New repository secret**:
-- Nome: `YOUTUBE_COOKIES`
-- Valor: cola o conteúdo do arquivo de cookies exportado
-
-O workflow já está configurado pra ler esse secret automaticamente (se ele
-não existir, o script simplesmente ignora e segue sem cookies).
-
-⚠️ **Cuidados:**
-- Use uma conta secundária do YouTube pra isso, não sua conta principal —
-  uso automatizado tem risco (pequeno, mas existe) de a conta ser
-  flagada
-- Cookies expiram de tempos em tempos (semanas a meses, varia) — se o erro
-  voltar, é só repetir a exportação e atualizar o secret
-- Nunca cole esse conteúdo em outro lugar além do campo de secret do GitHub
-  (ele literalmente dá acesso à sua conta do YouTube enquanto válido)
+- **Timeout do job:** 15 minutos (`timeout-minutes` no workflow). Pra
+  vídeos mais longos que ~10 min, aumente esse valor, já que a gravação é
+  proporcional à duração real.
+- **2.000 minutos/mês** de Actions grátis em repositório privado
+  (ilimitado em público). Como a gravação agora leva o tempo real do
+  vídeo (não é instantâneo como extração de URL), o consumo de minutos é
+  maior que antes — vale monitorar se o volume crescer bastante.
+- **Anúncios:** o script tenta detectar e pular anúncio pré-roll antes de
+  começar a gravar. Se o YouTube mudar a estrutura HTML do botão de pular,
+  esse detector pode precisar de ajuste.
+- **Qualidade:** a gravação via `MediaRecorder` reproduz na resolução que
+  o player carregar (tipicamente a que o YouTube entrega por padrão pro
+  viewport configurado, 1280x720 aqui) — não é bit-exato ao arquivo
+  original, é uma reconstrução via reprodução real.
