@@ -170,13 +170,18 @@ def record_video(video_url, cookies, output_webm_path):
     title = None
 
     with sync_playwright() as p:
+        print("── Lançando o Chromium ──")
         browser = p.chromium.launch(
             headless=True,
             args=[
                 "--autoplay-policy=no-user-gesture-required",
                 "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
             ],
         )
+        print("── Chromium lançado, criando contexto ──")
         context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -187,12 +192,16 @@ def record_video(video_url, cookies, output_webm_path):
 
         if cookies:
             context.add_cookies(cookies)
+        print(f"── Contexto criado, {len(cookies)} cookies carregados ──")
 
         page = context.new_page()
         page.expose_function("sendChunkToPython", handle_chunk)
 
+        print(f"── Navegando pra {video_url} ──")
         page.goto(video_url, wait_until="domcontentloaded", timeout=30000)
+        print("── Página carregada (domcontentloaded), esperando <video> ──")
         page.wait_for_selector("video", state="attached", timeout=20000)
+        print("── <video> encontrado no DOM ──")
 
         # Fecha banner de consentimento/cookies se aparecer (best-effort)
         for text in ["Accept all", "Aceitar tudo", "I agree", "Concordo"]:
@@ -201,12 +210,15 @@ def record_video(video_url, cookies, output_webm_path):
                 break
             except Exception:
                 continue
+        print("── Checagem de banner de consentimento concluída ──")
 
         title = page.evaluate(
             "() => document.querySelector('meta[name=\"title\"]')?.content || document.title"
         )
+        print(f"── Título: {title} ──")
 
         skip_ads_if_present(page)
+        print("── Checagem de anúncio concluída ──")
 
         duration = get_video_duration_seconds(page)
         if duration is None:
@@ -220,6 +232,7 @@ def record_video(video_url, cookies, output_webm_path):
         wait_seconds = min(duration + 20, MAX_WAIT_SECONDS)
 
         page.evaluate(RECORDER_JS)
+        print("── Gravação iniciada ──")
 
         # Espera o vídeo acabar (ou timeout de segurança)
         try:
@@ -228,11 +241,13 @@ def record_video(video_url, cookies, output_webm_path):
                 "document.querySelector('video'); return v && v.ended; }",
                 timeout=int(wait_seconds * 1000),
             )
+            print("── Vídeo terminou naturalmente ──")
         except Exception:
             print(f"Timeout esperando o vídeo terminar (esperado ~{wait_seconds:.0f}s) — seguindo com o que foi gravado.")
 
         page.evaluate("() => { if (window.__recorder) window.__recorder.stop(); }")
         page.wait_for_timeout(1500)  # tempo pro último chunk chegar
+        print(f"── Gravação parada, {len(chunks)} chunks recebidos ──")
 
         browser.close()
 
@@ -279,9 +294,11 @@ def main():
         if not os.path.exists(webm_path) or os.path.getsize(webm_path) == 0:
             notify({"job_id": JOB_ID, "status": "error", "error": "gravação vazia — nenhum chunk foi capturado"})
             sys.exit(1)
+        print(f"── .webm salvo: {os.path.getsize(webm_path)} bytes ──")
 
         try:
             convert_webm_to_mp4(webm_path, mp4_path)
+            print(f"── .mp4 convertido: {os.path.getsize(mp4_path)} bytes ──")
         except subprocess.CalledProcessError as e:
             notify({"job_id": JOB_ID, "status": "error", "error": f"erro no ffmpeg ao converter pra mp4: {e.stderr.decode(errors='ignore')[:500]}"})
             sys.exit(1)
@@ -293,6 +310,7 @@ def main():
                 public_id=f"youtube_downloads/{JOB_ID}",
                 folder="youtube_downloads",
             )
+            print("── Upload pro Cloudinary concluído ──")
         except Exception as e:
             notify({"job_id": JOB_ID, "status": "error", "error": f"erro no upload Cloudinary: {e}"})
             sys.exit(1)
