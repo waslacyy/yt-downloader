@@ -91,7 +91,7 @@ async () => {
     return btoa(binary);
   }
 
-  const video = document.querySelector('video');
+  const video = document.querySelector('#movie_player video') || document.querySelector('video');
   video.muted = false;
   video.volume = 1.0;
 
@@ -149,7 +149,8 @@ def get_video_duration_seconds(page, max_wait_seconds=15):
     """Espera os metadados do vídeo carregarem pra saber a duração real."""
     for _ in range(max_wait_seconds * 2):
         duration = page.evaluate(
-            "() => { const v = document.querySelector('video'); "
+            "() => { const v = document.querySelector('#movie_player video') || "
+            "document.querySelector('video'); "
             "return v && isFinite(v.duration) ? v.duration : null; }"
         )
         if duration and duration > 0:
@@ -210,17 +211,25 @@ def record_video(video_url, cookies, output_webm_path):
         duration = get_video_duration_seconds(page)
         if duration is None:
             duration = 60  # fallback conservador se não conseguir ler a duração
+        print(f"── Duração detectada: {duration:.1f}s ──")
+
+        # Teto de segurança: nunca esperar mais que isso, mesmo que a
+        # duração lida esteja errada (ex: pegou um <video> de preview
+        # de outro Short no feed em vez do player principal).
+        MAX_WAIT_SECONDS = 180
+        wait_seconds = min(duration + 20, MAX_WAIT_SECONDS)
 
         page.evaluate(RECORDER_JS)
 
-        # Espera o vídeo acabar (ou timeout de segurança = duração + margem)
+        # Espera o vídeo acabar (ou timeout de segurança)
         try:
             page.wait_for_function(
-                "() => document.querySelector('video').ended",
-                timeout=int((duration + 20) * 1000),
+                "() => { const v = document.querySelector('#movie_player video') || "
+                "document.querySelector('video'); return v && v.ended; }",
+                timeout=int(wait_seconds * 1000),
             )
         except Exception:
-            print(f"Timeout esperando o vídeo terminar (duração esperada: {duration}s) — seguindo com o que foi gravado.")
+            print(f"Timeout esperando o vídeo terminar (esperado ~{wait_seconds:.0f}s) — seguindo com o que foi gravado.")
 
         page.evaluate("() => { if (window.__recorder) window.__recorder.stop(); }")
         page.wait_for_timeout(1500)  # tempo pro último chunk chegar
