@@ -226,10 +226,12 @@ def record_video(video_url, cookies, output_webm_path):
         # decodificação de fato com uma interação "trusted", mesmo com
         # autoplay-policy habilitada e play() disparado via JS.
         try:
-            page.click("#movie_player", timeout=5000, force=True)
-            print("── Clique real no player disparado ──")
+            viewport = page.viewport_size()
+            center_x, center_y = viewport["width"] // 2, viewport["height"] // 2
+            page.mouse.click(center_x, center_y)
+            print(f"── Clique real no centro da tela ({center_x},{center_y}) disparado ──")
         except Exception as e:
-            print(f"── Aviso: não consegui clicar no player: {e} ──")
+            print(f"── Aviso: falha no clique de mouse: {e} ──")
 
         page.evaluate(FIRE_PLAY_JS)
         print("── play() disparado (sem esperar a Promise) ──")
