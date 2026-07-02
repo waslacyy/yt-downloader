@@ -187,14 +187,9 @@ def record_video(video_url, cookies, output_webm_path):
                 "--disable-gpu",
             ],
         )
-        print("── Chromium lançado, criando contexto ──")
-        context = browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1280, "height": 720},
-        )
+        print("── Chromium lançado, criando contexto (emulando mobile) ──")
+        mobile_device = p.devices["Pixel 5"]
+        context = browser.new_context(**mobile_device)
 
         if cookies:
             context.add_cookies(cookies)
@@ -231,7 +226,7 @@ def record_video(video_url, cookies, output_webm_path):
         # decodificação de fato com uma interação "trusted", mesmo com
         # autoplay-policy habilitada e play() disparado via JS.
         try:
-            page.click("#movie_player", timeout=5000)
+            page.click("#movie_player", timeout=5000, force=True)
             print("── Clique real no player disparado ──")
         except Exception as e:
             print(f"── Aviso: não consegui clicar no player: {e} ──")
